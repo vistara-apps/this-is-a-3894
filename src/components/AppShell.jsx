@@ -2,7 +2,7 @@ import React from 'react'
 import { Scale, User, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
-export function AppShell({ children, userTier = 'free' }) {
+export function AppShell({ children, userTier = 'free', isAuthenticated = false, onAuthClick }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const tierColors = {
@@ -44,10 +44,19 @@ export function AppShell({ children, userTier = 'free' }) {
                 <span className={`text-sm font-medium ${tierColors[userTier]}`}>
                   {tierLabels[userTier]} Plan
                 </span>
-                <div className="flex items-center space-x-2 text-text-secondary">
-                  <User className="w-5 h-5" />
-                  <span className="text-sm">Account</span>
-                </div>
+                {isAuthenticated ? (
+                  <div className="flex items-center space-x-2 text-text-secondary">
+                    <User className="w-5 h-5" />
+                    <span className="text-sm">Account</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={onAuthClick}
+                    className="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+                  >
+                    Sign In
+                  </button>
+                )}
               </div>
             </nav>
 
@@ -82,10 +91,19 @@ export function AppShell({ children, userTier = 'free' }) {
                     <span className={`text-sm font-medium ${tierColors[userTier]}`}>
                       {tierLabels[userTier]} Plan
                     </span>
-                    <div className="flex items-center space-x-2 text-text-secondary">
-                      <User className="w-5 h-5" />
-                      <span className="text-sm">Account</span>
-                    </div>
+                    {isAuthenticated ? (
+                      <div className="flex items-center space-x-2 text-text-secondary">
+                        <User className="w-5 h-5" />
+                        <span className="text-sm">Account</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={onAuthClick}
+                        className="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+                      >
+                        Sign In
+                      </button>
+                    )}
                   </div>
                 </div>
               </nav>

@@ -1,25 +1,95 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { Toaster } from 'react-hot-toast'
 import { AppShell } from './components/AppShell'
 import { SearchBar } from './components/SearchBar'
 import { CheatSheetCard } from './components/CheatSheetCard'
 import { DocumentTemplateCard } from './components/DocumentTemplateCard'
 import { SubscriptionModal } from './components/SubscriptionModal'
+import { AuthModal } from './components/AuthModal'
+import { TemplateGeneratorModal } from './components/TemplateGeneratorModal'
 import { mockData } from './data/mockData'
+import { enhanceSearch } from './lib/openai'
+import useStore from './store/useStore'
 
 function App() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [selectedScenario, setSelectedScenario] = useState(null)
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
-  const [userTier, setUserTier] = useState('free') // free, basic, pro
-  const [activeTab, setActiveTab] = useState('cheatsheets') // cheatsheets, templates
+  // Local state for UI
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [filteredScenarios, setFilteredScenarios] = useState([])
+  const [isSearching, setIsSearching] = useState(false)
 
-  // Filter content based on search query
-  const filteredScenarios = mockData.scenarios.filter(scenario =>
-    scenario.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    scenario.keywords.some(keyword => 
-      keyword.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  )
+  // Global state from store
+  const {
+    searchQuery,
+    setSearchQuery,
+    selectedScenario,
+    setSelectedScenario,
+    showSubscriptionModal,
+    setShowSubscriptionModal,
+    userTier,
+    activeTab,
+    setActiveTab,
+    isAuthenticated,
+    initializeApp,
+    scenarios,
+    cheatSheets,
+    documentTemplates
+  } = useStore()
+
+  // Use mock data as fallback
+  const currentScenarios = scenarios.length > 0 ? scenarios : mockData.scenarios
+  const currentCheatSheets = cheatSheets.length > 0 ? cheatSheets : mockData.cheatSheets
+  const currentTemplates = documentTemplates.length > 0 ? documentTemplates : mockData.documentTemplates
+
+  // Initialize app on mount
+  useEffect(() => {
+    initializeApp()
+  }, [initializeApp])
+
+  // Enhanced search with AI when available
+  useEffect(() => {
+    const performSearch = async () => {
+      if (!searchQuery.trim()) {
+        setFilteredScenarios(currentScenarios)
+        return
+      }
+
+      setIsSearching(true)
+      
+      try {
+        // Basic filtering
+        const basicFiltered = currentScenarios.filter(scenario =>
+          scenario.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          scenario.keywords?.some(keyword => 
+            keyword.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        )
+
+        // Try AI-enhanced search if OpenAI is available
+        if (import.meta.env.VITE_OPENAI_API_KEY && basicFiltered.length > 1) {
+          const aiRanked = await enhanceSearch(searchQuery, basicFiltered)
+          setFilteredScenarios(aiRanked)
+        } else {
+          setFilteredScenarios(basicFiltered)
+        }
+      } catch (error) {
+        console.error('Search error:', error)
+        // Fallback to basic search
+        const basicFiltered = currentScenarios.filter(scenario =>
+          scenario.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          scenario.keywords?.some(keyword => 
+            keyword.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        )
+        setFilteredScenarios(basicFiltered)
+      } finally {
+        setIsSearching(false)
+      }
+    }
+
+    performSearch()
+  }, [searchQuery, currentScenarios])
 
   const handleCheatSheetAccess = (cheatSheet) => {
     if (userTier === 'free' && !cheatSheet.isFree) {
@@ -34,19 +104,41 @@ function App() {
       setShowSubscriptionModal(true)
       return
     }
-    // In a real app, this would generate and download the template
-    alert(`Generating template: ${template.title}`)
+    
+    if (!isAuthenticated) {
+      setShowAuthModal(true)
+      return
+    }
+    
+    setSelectedTemplate(template)
+    setShowTemplateModal(true)
   }
 
   const handleSubscribe = (tier) => {
-    setUserTier(tier)
-    setShowSubscriptionModal(false)
-    alert(`Subscribed to ${tier} plan!`)
+    // This is handled by the store now
+    console.log(`Subscribed to ${tier} plan!`)
   }
 
   return (
-    <AppShell userTier={userTier}>
-      <div className="min-h-screen bg-bg">
+    <>
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: 'hsl(0, 0%, 100%)',
+            color: 'hsl(220, 40%, 20%)',
+            border: '1px solid hsl(220, 20%, 80%)',
+          },
+        }}
+      />
+      
+      <AppShell 
+        userTier={userTier} 
+        isAuthenticated={isAuthenticated}
+        onAuthClick={() => setShowAuthModal(true)}
+      >
+        <div className="min-h-screen bg-bg">
         {/* Hero Section */}
         <div className="bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-white py-12 lg:py-20">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -61,6 +153,7 @@ function App() {
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 placeholder="Search legal scenarios (e.g., 'landlord won't fix heating')"
+                isLoading={isSearching}
               />
             </div>
           </div>
@@ -104,7 +197,7 @@ function App() {
           {/* Content Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {activeTab === 'cheatsheets' && filteredScenarios.map(scenario => {
-              const cheatSheet = mockData.cheatSheets.find(cs => cs.scenarioId === scenario.scenarioId)
+              const cheatSheet = currentCheatSheets.find(cs => cs.scenarioId === scenario.scenarioId)
               return cheatSheet ? (
                 <CheatSheetCard
                   key={cheatSheet.cheatSheetId}
@@ -117,7 +210,7 @@ function App() {
             })}
 
             {activeTab === 'templates' && filteredScenarios.map(scenario => {
-              const templates = mockData.documentTemplates.filter(dt => dt.scenarioId === scenario.scenarioId)
+              const templates = currentTemplates.filter(dt => dt.scenarioId === scenario.scenarioId)
               return templates.map(template => (
                 <DocumentTemplateCard
                   key={template.templateId}
@@ -140,11 +233,30 @@ function App() {
           )}
         </div>
 
-        {/* Subscription Modal */}
+        {/* Modals */}
         {showSubscriptionModal && (
           <SubscriptionModal
             onClose={() => setShowSubscriptionModal(false)}
             onSubscribe={handleSubscribe}
+          />
+        )}
+
+        {showAuthModal && (
+          <AuthModal
+            isOpen={showAuthModal}
+            onClose={() => setShowAuthModal(false)}
+          />
+        )}
+
+        {showTemplateModal && selectedTemplate && (
+          <TemplateGeneratorModal
+            isOpen={showTemplateModal}
+            onClose={() => {
+              setShowTemplateModal(false)
+              setSelectedTemplate(null)
+            }}
+            template={selectedTemplate}
+            userTier={userTier}
           />
         )}
 
@@ -177,6 +289,7 @@ function App() {
         )}
       </div>
     </AppShell>
+    </>
   )
 }
 
